@@ -45,7 +45,9 @@ def train(args, model_substruct, model_context, loader, optimizer_substruct, opt
     for step, batch in enumerate(tqdm(loader, desc="Iteration")):
         batch = batch.to(device)
 
-        #print(batch)
+        print(batch, '\n', batch.x_substruct, '\n', batch.x_context, '\n', batch.edge_index_substruct, '\n', batch.edge_index_context, batch.center_substruct_idx)
+        #BatchSubstructContext(batch_overlapped_context=[22], center_substruct_idx=[2], edge_attr_context=[52, 9], edge_attr_substruct=[414, 9], 
+        #edge_index_context=[2, 52], edge_index_substruct=[2, 414], overlap_context_substruct_idx=[22], overlapped_context_size=[2], x_context=[22, 1], x_substruct=[50, 1])
         # creating substructure representation
         substruct_rep = model_substruct(batch.x_substruct, batch.edge_index_substruct, batch.edge_attr_substruct)[batch.center_substruct_idx]
         
@@ -100,33 +102,20 @@ def train(args, model_substruct, model_context, loader, optimizer_substruct, opt
 def main():
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch implementation of pre-training of graph neural networks')
-    parser.add_argument('--device', type=int, default=0,
-                        help='which gpu to use if any (default: 0)')
-    parser.add_argument('--batch_size', type=int, default=256,
-                        help='input batch size for training (default: 256)')
-    parser.add_argument('--epochs', type=int, default=100,
-                        help='number of epochs to train (default: 100)')
-    parser.add_argument('--lr', type=float, default=0.001,
-                        help='learning rate (default: 0.001)')
-    parser.add_argument('--decay', type=float, default=0,
-                        help='weight decay (default: 0)')
-    parser.add_argument('--num_layer', type=int, default=5,
-                        help='number of GNN message passing layers (default: 5).')
-    parser.add_argument('--l1', type=int, default=1,
-                        help='l1 (default: 1).')
-    parser.add_argument('--center', type=int, default=0,
-                        help='center (default: 0).')
-    parser.add_argument('--emb_dim', type=int, default=300,
-                        help='embedding dimensions (default: 300)')
-    parser.add_argument('--dropout_ratio', type=float, default=0,
-                        help='dropout ratio (default: 0)')
-    parser.add_argument('--neg_samples', type=int, default=1,
-                        help='number of negative contexts per positive context (default: 1)')
-    parser.add_argument('--JK', type=str, default="last",
-                        help='how the node features are combined across layers. last, sum, max or concat')
-    parser.add_argument('--context_pooling', type=str, default="mean",
-                        help='how the contexts are pooled (sum, mean, or max)')
-    parser.add_argument('--gnn_type', type=str, default="gin")
+    parser.add_argument('--device', type=int, default=0, help='which gpu to use if any (default: 0)')
+    parser.add_argument('--batch_size', type=int, default=2, help='input batch size for training (default: 256)')
+    parser.add_argument('--epochs', type=int, default=100, help='number of epochs to train (default: 100)')
+    parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default: 0.001)')
+    parser.add_argument('--decay', type=float, default=0, help='weight decay (default: 0)')
+    parser.add_argument('--num_layer', type=int, default=5, help='number of GNN message passing layers (default: 5).')
+    parser.add_argument('--l1', type=int, default=1, help='l1 (default: 1).')
+    parser.add_argument('--center', type=int, default=0, help='center (default: 0).')
+    parser.add_argument('--emb_dim', type=int, default=300, help='embedding dimensions (default: 300)')
+    parser.add_argument('--dropout_ratio', type=float, default=0, help='dropout ratio (default: 0)')
+    parser.add_argument('--neg_samples', type=int, default=1, help='number of negative contexts per positive context (default: 1)')
+    parser.add_argument('--JK', type=str, default="last", help='how the node features are combined across layers. last, sum, max or concat')
+    parser.add_argument('--context_pooling', type=str, default="mean", help='how the contexts are pooled (sum, mean, or max)')
+    parser.add_argument('--gnn_type', type=str, default="gat")
     parser.add_argument('--mode', type=str, default = "cbow", help = "cbow or skipgram")
     parser.add_argument('--model_file', type=str, default = '', help='filename to output the model')
     parser.add_argument('--num_workers', type=int, default = 4, help='number of workers for dataset loading')
@@ -143,7 +132,7 @@ def main():
     #set up dataset
     root_unsupervised = 'dataset/unsupervised'
     dataset = BioDataset(root_unsupervised, data_type='unsupervised', transform = ExtractSubstructureContextPair(l1 = args.l1, center = args.center))
-    print(dataset[0])
+    print(dataset[0], "\n", dataset[1], "\n", len(dataset))
     print("l1: " + str(args.l1))
     print("center: " + str(args.center))
 

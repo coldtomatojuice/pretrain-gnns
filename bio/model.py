@@ -8,6 +8,8 @@ from dataloader import DataLoaderFinetune
 from torch_scatter import scatter_add
 from torch_geometric.nn.inits import glorot, zeros
 
+import time
+
 class GSANConv(MessagePassing):
     """
     Extension of Graph Self Attended Network aggregation to incorporate edge information by concatenation.
@@ -38,8 +40,6 @@ class GSANConv(MessagePassing):
         self.heads = heads
         self.negative_slope = negative_slope
 
-        self.weight_linear = torch.nn.Linear(emb_dim, heads * emb_dim)
-
         self.att = torch.nn.Parameter(torch.Tensor(1, heads, 2 * emb_dim))
         self.bias = torch.nn.Parameter(torch.Tensor(emb_dim))
         glorot(self.att)
@@ -59,17 +59,28 @@ class GSANConv(MessagePassing):
 
         if self.input_layer:
             x = self.input_node_embeddings(x.to(torch.int64).view(-1,))
-
-        #return self.propagate(self.aggr, edge_index, x=x, edge_attr=edge_embeddings)
+        for i in range(10):
+            print(x[i][:4])
+        print(edge_index[0].size())
+        print(edge_index[0][0][:10])
+        print(edge_index[0][0][-10:])
+        print(edge_index[0][1][:10])
+        print(edge_index[0][1][-10:])
+        print("==================================================")
         return self.propagate(edge_index[0], x=x, edge_attr=edge_embeddings)
 
     def message(self, edge_index, x_i, x_j, edge_attr):
-        
-        edge_attr = edge_attr.view(-1, self.heads, self.emb_dim)
+        edge_attr = torch.sum(edge_attr.view(-1, self.heads, self.emb_dim), dim=1)
         x_j += edge_attr
-        x_j = torch.cat([x_j, edge_attr], dim = 1)
-
-        alpha = (torch.cat([x_i, x_j], dim=-1) * self.att).sum(dim=-1)
+        # x_j = torch.cat([x_j, edge_attr], dim = 1)
+        for i in range(10):
+            print(x_j[i][:4])
+        print("==================================================")
+        for i in range(10):
+            print(x_i[i][:4])
+        x_sum = torch.cat([x_i, x_j], dim=-1)
+        print("x_sum size()", x_sum.size(), self.att.size()) # torch.Size([722, 600]) torch.Size([1, 2, 600])
+        alpha = (x_sum * self.att).sum(dim=-1)
 
         alpha = F.leaky_relu(alpha, self.negative_slope)
         alpha = softmax(alpha, edge_index[0])
@@ -120,7 +131,6 @@ class GINConv(MessagePassing):
         if self.input_layer:
             x = self.input_node_embeddings(x.to(torch.int64).view(-1,))
 
-        return self.propagate(self.aggr, edge_index, x=x, edge_attr=edge_embeddings)
         return self.propagate(edge_index[0], x=x, edge_attr=edge_embeddings)
 
     def message(self, x_j, edge_attr):
@@ -151,15 +161,13 @@ class GCNConv(MessagePassing):
 
     def norm(self, edge_index, num_nodes, dtype):
         ### assuming that self-loops have been already added in edge_index
-        edge_weight = torch.ones((edge_index.size(1), ), dtype=dtype,
-                                     device=edge_index.device)
+        edge_weight = torch.ones((edge_index.size(1), ), dtype=dtype, device=edge_index.device)
         row, col = edge_index
         deg = scatter_add(edge_weight, row, dim=0, dim_size=num_nodes)
         deg_inv_sqrt = deg.pow(-0.5)
         deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
 
         return deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
-
 
     def forward(self, x, edge_index, edge_attr):
         #add self loops in the edge space
@@ -176,18 +184,20 @@ class GCNConv(MessagePassing):
         if self.input_layer:
             x = self.input_node_embeddings(x.to(torch.int64).view(-1,))
 
-        norm = self.norm(edge_index, x.size(0), x.dtype)
+        norm = self.norm(edge_index[0], x.size(0), x.dtype)
 
         x = self.linear(x)
 
-        return self.propagate(self.aggr, edge_index, x=x, edge_attr=edge_embeddings, norm = norm)
+        return self.propagate(edge_index[0], x=x, edge_attr=edge_embeddings, norm = norm)
 
     def message(self, x_j, edge_attr, norm):
+        print("gcn size", x_j.size(), edge_attr.size())
+        time.sleep(2)
         return norm.view(-1, 1) * (x_j + edge_attr)
 
 
 class GATConv(MessagePassing):
-    def __init__(self, emb_dim, heads=2, negative_slope=0.2, aggr = "add", input_layer = False):
+    def __init__(self, emb_dim, heads=3, negative_slope=0.2, aggr = "add", input_layer = False):
         super(GATConv, self).__init__()
 
         self.aggr = aggr
@@ -217,6 +227,7 @@ class GATConv(MessagePassing):
         zeros(self.bias)
 
     def forward(self, x, edge_index, edge_attr):
+        # print(x.size(), edge_index.size(), edge_attr.size())
         #add self loops in the edge space
         edge_index = add_self_loops(edge_index, num_nodes = x.size(0))
 
@@ -231,22 +242,40 @@ class GATConv(MessagePassing):
         if self.input_layer:
             x = self.input_node_embeddings(x.to(torch.int64).view(-1,))
 
-        x = self.weight_linear(x).view(-1, self.heads, self.emb_dim)
-        return self.propagate(self.aggr, edge_index, x=x, edge_attr=edge_embeddings)
+        x = self.weight_linear(x)#.view(-1, self.heads, self.emb_dim)
+        # print(x.size(), edge_index[0].size(), edge_embeddings.size())
+        return self.propagate(x=x, edge_index=edge_index[0], edge_attr=edge_embeddings)
 
     def message(self, edge_index, x_i, x_j, edge_attr):
+        # print(x_i.size(), x_j.size(), edge_attr.size(), edge_index.size()) # torch.Size([50, 464, 300]) torch.Size([50, 464, 300]) torch.Size([464, 900])
+        # print(x_j[0][:5])
+        x_j = x_j.view(-1, self.heads, self.emb_dim)
+        x_i = x_i.view(-1, self.heads, self.emb_dim)
         edge_attr = edge_attr.view(-1, self.heads, self.emb_dim)
         x_j += edge_attr
+        # print("edge size", edge_index.unique().size(), edge_index[0].unique().size())
 
-        alpha = (torch.cat([x_i, x_j], dim=-1) * self.att).sum(dim=-1)
-
+        # alpha = (torch.cat([x_i, x_j], dim=-1) * self.att).sum(dim=-1)
+        x_cat = torch.cat([x_i, x_j], dim=-1)
+        # print(x_cat.size())
+        alpha = (x_cat * self.att).sum(dim=-1)
         alpha = F.leaky_relu(alpha, self.negative_slope)
         alpha = softmax(alpha, edge_index[0])
 
-        return x_j * alpha.view(-1, self.heads, 1)
+        # print(x_j.size(), alpha.size())
+        # return x_j.view(-1, self.heads, self.emb_dim) * alpha.view(-1, self.heads, 1)
+        out = x_j * alpha.view(-1, self.heads, 1)#alpha.unsqueeze(-1)
+        # print(out.size())
+        out = out.view(self.heads, -1, self.emb_dim)
+        # out = out.view(-1, self.  heads * self.emb_dim)
+        # return x_j.view(-1, self.heads, self.emb_dim) * alpha.unsqueeze(-1)
+        return out
 
     def update(self, aggr_out):
-        aggr_out = aggr_out.mean(dim=1)
+        # print("aggr_out", aggr_out.size())
+        aggr_out = aggr_out.mean(dim=0)
+        # print("aggr_out", aggr_out.size(), self.bias.size())
+
         aggr_out = aggr_out + self.bias
 
         return aggr_out
@@ -315,7 +344,7 @@ class GNN(torch.nn.Module):
         node representations
 
     """
-    def __init__(self, num_layer, emb_dim, JK = "last", drop_ratio = 0, gnn_type = "gin"):
+    def __init__(self, num_layer, emb_dim, JK = "last", drop_ratio = 0, gnn_type = "gsan"):
         super(GNN, self).__init__()
         self.num_layer = num_layer
         self.drop_ratio = drop_ratio
@@ -332,7 +361,9 @@ class GNN(torch.nn.Module):
             else:
                 input_layer = False
 
-            if gnn_type == "gin":
+            if gnn_type == "gsan":
+                self.gnns.append(GSANConv(emb_dim, aggr = "add", input_layer = input_layer))
+            elif gnn_type == "gin":
                 self.gnns.append(GINConv(emb_dim, aggr = "add", input_layer = input_layer))
             elif gnn_type == "gcn":
                 self.gnns.append(GCNConv(emb_dim, input_layer = input_layer))
@@ -341,7 +372,6 @@ class GNN(torch.nn.Module):
             elif gnn_type == "graphsage":
                 self.gnns.append(GraphSAGEConv(emb_dim, input_layer = input_layer))
 
-    #def forward(self, x, edge_index, edge_attr):
     def forward(self, x, edge_index, edge_attr):
         h_list = [x]
         for layer in range(self.num_layer):
@@ -377,7 +407,7 @@ class GNN_graphpred(torch.nn.Module):
     See https://arxiv.org/abs/1810.00826
     JK-net: https://arxiv.org/abs/1806.03536
     """
-    def __init__(self, num_layer, emb_dim, num_tasks, JK = "last", drop_ratio = 0, graph_pooling = "mean", gnn_type = "gin"):
+    def __init__(self, num_layer, emb_dim, num_tasks, JK = "last", drop_ratio = 0, graph_pooling = "mean", gnn_type = "gsan"):
         super(GNN_graphpred, self).__init__()
         self.num_layer = num_layer
         self.drop_ratio = drop_ratio
