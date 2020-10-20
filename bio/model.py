@@ -227,7 +227,6 @@ class GATConv(MessagePassing):
         zeros(self.bias)
 
     def forward(self, x, edge_index, edge_attr):
-        # print(x.size(), edge_index.size(), edge_attr.size())
         #add self loops in the edge space
         edge_index = add_self_loops(edge_index, num_nodes = x.size(0))
 
@@ -243,41 +242,25 @@ class GATConv(MessagePassing):
             x = self.input_node_embeddings(x.to(torch.int64).view(-1,))
 
         x = self.weight_linear(x)#.view(-1, self.heads, self.emb_dim)
-        # print(x.size(), edge_index[0].size(), edge_embeddings.size())
         return self.propagate(x=x, edge_index=edge_index[0], edge_attr=edge_embeddings)
 
     def message(self, edge_index, x_i, x_j, edge_attr):
-        # print(x_i.size(), x_j.size(), edge_attr.size(), edge_index.size()) # torch.Size([50, 464, 300]) torch.Size([50, 464, 300]) torch.Size([464, 900])
-        # print(x_j[0][:5])
         x_j = x_j.view(-1, self.heads, self.emb_dim)
         x_i = x_i.view(-1, self.heads, self.emb_dim)
         edge_attr = edge_attr.view(-1, self.heads, self.emb_dim)
         x_j += edge_attr
-        # print("edge size", edge_index.unique().size(), edge_index[0].unique().size())
 
-        # alpha = (torch.cat([x_i, x_j], dim=-1) * self.att).sum(dim=-1)
-        x_cat = torch.cat([x_i, x_j], dim=-1)
-        # print(x_cat.size())
-        alpha = (x_cat * self.att).sum(dim=-1)
+        alpha = (torch.cat([x_i, x_j], dim=-1) * self.att).sum(dim=-1)
         alpha = F.leaky_relu(alpha, self.negative_slope)
         alpha = softmax(alpha, edge_index[0])
-
-        # print(x_j.size(), alpha.size())
-        # return x_j.view(-1, self.heads, self.emb_dim) * alpha.view(-1, self.heads, 1)
+        
         out = x_j * alpha.view(-1, self.heads, 1)#alpha.unsqueeze(-1)
-        # print(out.size())
         out = out.view(self.heads, -1, self.emb_dim)
-        # out = out.view(-1, self.  heads * self.emb_dim)
-        # return x_j.view(-1, self.heads, self.emb_dim) * alpha.unsqueeze(-1)
         return out
 
     def update(self, aggr_out):
-        # print("aggr_out", aggr_out.size())
         aggr_out = aggr_out.mean(dim=0)
-        # print("aggr_out", aggr_out.size(), self.bias.size())
-
         aggr_out = aggr_out + self.bias
-
         return aggr_out
 
 
