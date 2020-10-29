@@ -52,13 +52,13 @@ class GSANConv(MessagePassing):
 
     def forward(self, x, edge_index, edge_attr):
         #add self loops in the edge space
-        edge_index = add_self_loops(edge_index, num_nodes = x.size(0))
+        # edge_index = add_self_loops(edge_index, num_nodes = x.size(0))
 
         #add features corresponding to self-loop edges.
-        self_loop_attr = torch.zeros(x.size(0), 9)
-        self_loop_attr[:,7] = 1 # attribute for self-loop edge
-        self_loop_attr = self_loop_attr.to(edge_attr.device).to(edge_attr.dtype)
-        edge_attr = torch.cat((edge_attr, self_loop_attr), dim = 0)
+        # self_loop_attr = torch.zeros(x.size(0), 9)
+        # self_loop_attr[:,7] = 1 # attribute for self-loop edge
+        # self_loop_attr = self_loop_attr.to(edge_attr.device).to(edge_attr.dtype)
+        # edge_attr = torch.cat((edge_attr, self_loop_attr), dim = 0)
 
         edge_embeddings = self.edge_encoder(edge_attr)
 
@@ -66,19 +66,21 @@ class GSANConv(MessagePassing):
             x = self.input_node_embeddings(x.to(torch.int64).view(-1,))
         
         x = x.repeat(1,3)
-        return self.propagate(edge_index[0], x=x, edge_attr=edge_embeddings)
+        # return self.propagate(edge_index[0], x=x, edge_attr=edge_embeddings)
+        return self.propagate(edge_index, x=x, edge_attr=edge_embeddings)
 
     def message(self, edge_index, x_i, x_j, edge_attr):
         x_j = x_j.view(-1, self.heads, self.emb_dim)
         x_i = x_i.view(-1, self.heads, self.emb_dim)
         edge_attr = edge_attr.view(-1, self.heads, self.emb_dim)
         x_j += edge_attr
-
+        # additional positional encoding (how? edge index X. require relative positional encoding O)
         alpha = (torch.cat([x_i, x_j], dim=-1) * self.att).sum(dim=-1)
         alpha = F.leaky_relu(alpha, self.negative_slope)
         alpha = softmax(alpha, edge_index[0])
         
         out = x_j * alpha.view(-1, self.heads, 1)#alpha.unsqueeze(-1)
+        out += x_i # add residual sum. it might not need to add self loop, it residual is added
         out = out.view(self.heads, -1, self.emb_dim)
         return out
 
