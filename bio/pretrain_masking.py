@@ -69,7 +69,7 @@ def main():
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch implementation of pre-training of graph neural networks')
     parser.add_argument('--device', type=int, default=0, help='which gpu to use if any (default: 0)')
-    parser.add_argument('--batch_size', type=int, default=4, help='input batch size for training (default: 256)')
+    parser.add_argument('--batch_size', type=int, default=32, help='input batch size for training (default: 256)')
     parser.add_argument('--epochs', type=int, default=100, help='number of epochs to train (default: 100)')
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default: 0.001)')
     parser.add_argument('--decay', type=float, default=0, help='weight decay (default: 0)')
@@ -78,7 +78,7 @@ def main():
     parser.add_argument('--dropout_ratio', type=float, default=0, help='dropout ratio (default: 0)')
     parser.add_argument('--mask_rate', type=float, default=0.15, help='dropout ratio (default: 0.15)')
     parser.add_argument('--JK', type=str, default="last", help='how the node features are combined across layers. last, sum, max or concat')
-    parser.add_argument('--gnn_type', type=str, default="gat")
+    parser.add_argument('--gnn_type', type=str, default="gsan")
     parser.add_argument('--model_file', type=str, default = '', help='filename to output the model')
     parser.add_argument('--seed', type=int, default=0, help = "Seed for splitting dataset.")
     parser.add_argument('--num_workers', type=int, default = 8, help='number of workers for dataset loading')
@@ -117,7 +117,7 @@ def main():
         print("====epoch " + str(epoch))
         
         train_loss, train_acc = train(args, model_list, loader, optimizer_list, device)
-        print(train_loss, train_acc)
+        print("loss :", train_loss, "accuracy :", train_acc)
 
     if not args.model_file == "":
         torch.save(model.state_dict(), args.model_file + ".pth")

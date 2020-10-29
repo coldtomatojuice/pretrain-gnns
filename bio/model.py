@@ -20,10 +20,21 @@ class GSANConv(MessagePassing):
 
     See https://arxiv.org/abs/1810.00826
     """
-    def __init__(self, emb_dim, aggr = "add", input_layer = False, heads=2, negative_slope=0.2):
+    def __init__(self, emb_dim, aggr = "add", input_layer = False, heads=3, negative_slope=0.2):
         super(GSANConv, self).__init__()
+
+        self.aggr = aggr
+
+        self.emb_dim = emb_dim
+        self.heads = heads
+        self.negative_slope = negative_slope
+
         # multi-layer perceptron
-        self.mlp = torch.nn.Sequential(torch.nn.Linear(2*emb_dim, 2*emb_dim), torch.nn.BatchNorm1d(2*emb_dim), torch.nn.ReLU(), torch.nn.Linear(2*emb_dim, emb_dim))
+        self.mlp = torch.nn.Sequential(
+            torch.nn.Linear(emb_dim, emb_dim), 
+            torch.nn.BatchNorm1d(emb_dim), 
+            torch.nn.ReLU(), 
+            torch.nn.Linear(emb_dim, emb_dim))
 
         ### Mapping 0/1 edge features to embedding
         self.edge_encoder = torch.nn.Linear(9, heads * emb_dim)
@@ -33,12 +44,6 @@ class GSANConv(MessagePassing):
         if self.input_layer:
             self.input_node_embeddings = torch.nn.Embedding(2, emb_dim)
             torch.nn.init.xavier_uniform_(self.input_node_embeddings.weight.data)
-
-        self.aggr = aggr
-
-        self.emb_dim = emb_dim
-        self.heads = heads
-        self.negative_slope = negative_slope
 
         self.att = torch.nn.Parameter(torch.Tensor(1, heads, 2 * emb_dim))
         self.bias = torch.nn.Parameter(torch.Tensor(emb_dim))
@@ -59,35 +64,27 @@ class GSANConv(MessagePassing):
 
         if self.input_layer:
             x = self.input_node_embeddings(x.to(torch.int64).view(-1,))
-        for i in range(10):
-            print(x[i][:4])
-        print(edge_index[0].size())
-        print(edge_index[0][0][:10])
-        print(edge_index[0][0][-10:])
-        print(edge_index[0][1][:10])
-        print(edge_index[0][1][-10:])
-        print("==================================================")
+        
+        x = x.repeat(1,3)
         return self.propagate(edge_index[0], x=x, edge_attr=edge_embeddings)
 
     def message(self, edge_index, x_i, x_j, edge_attr):
-        edge_attr = torch.sum(edge_attr.view(-1, self.heads, self.emb_dim), dim=1)
+        x_j = x_j.view(-1, self.heads, self.emb_dim)
+        x_i = x_i.view(-1, self.heads, self.emb_dim)
+        edge_attr = edge_attr.view(-1, self.heads, self.emb_dim)
         x_j += edge_attr
-        # x_j = torch.cat([x_j, edge_attr], dim = 1)
-        for i in range(10):
-            print(x_j[i][:4])
-        print("==================================================")
-        for i in range(10):
-            print(x_i[i][:4])
-        x_sum = torch.cat([x_i, x_j], dim=-1)
-        print("x_sum size()", x_sum.size(), self.att.size()) # torch.Size([722, 600]) torch.Size([1, 2, 600])
-        alpha = (x_sum * self.att).sum(dim=-1)
 
+        alpha = (torch.cat([x_i, x_j], dim=-1) * self.att).sum(dim=-1)
         alpha = F.leaky_relu(alpha, self.negative_slope)
         alpha = softmax(alpha, edge_index[0])
-
-        return x_j * alpha.view(-1, self.heads, 1)
+        
+        out = x_j * alpha.view(-1, self.heads, 1)#alpha.unsqueeze(-1)
+        out = out.view(self.heads, -1, self.emb_dim)
+        return out
 
     def update(self, aggr_out):
+        aggr_out = aggr_out.mean(dim=0)
+        aggr_out = aggr_out + self.bias
         return self.mlp(aggr_out)
 
 class GINConv(MessagePassing):
